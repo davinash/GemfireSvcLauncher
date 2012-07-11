@@ -34,7 +34,6 @@
 #define QUOTESTRING   "\""
 
 void StopGemfireServer();
-DWORD create_process (char *cmdline, char *out, DWORD outsize);
 
 std::string  gJavaHome;
 std::string  gGemfireHome;
@@ -53,12 +52,12 @@ std::vector<std::string>     gParameters;
 
 
 void Log(const char* format, ...)  {
-        FILE *fp = fopen ( gLogFilePath.c_str(), "a+");
-        va_list argptr;
-        va_start(argptr, format);
-        vfprintf(fp, format, argptr);
-        va_end(argptr);
-        fclose ( fp );
+    FILE *fp = fopen ( gLogFilePath.c_str(), "a+");
+    va_list argptr;
+    va_start(argptr, format);
+    vfprintf(fp, format, argptr);
+    va_end(argptr);
+    fclose ( fp );
 }
 
 void InitializeEnvironment() {
@@ -83,7 +82,13 @@ void StartGemfireServer() {
     std::string command =   gServiceLauncherCommand + " start " + gParams;
     Log("StartGemfireServer Command = %s\n" ,command.c_str());
 
-    system(command.c_str());
+    FILE   *pPipe;
+    char psBuffer[1024];
+    if( (pPipe = _popen( command.c_str(), "rt" )) != NULL ) {                    
+        while (fgets(psBuffer, 1024, pPipe));
+        Log( "[StartGemfireServer] ==> %s\n", psBuffer);
+        feof(pPipe);
+    }
 
     Log("Exiting StartGemfireServer\n");
 }
@@ -95,8 +100,13 @@ void StopGemfireServer()
     std::string command =   gServiceLauncherCommand + " stop " + gWorkingDirectory;
     Log("StopGemfireServer Command = %s\n" ,command.c_str());
 
-    system(command.c_str());
-
+    FILE   *pPipe;
+    char psBuffer[1024];
+    if( (pPipe = _popen( command.c_str(), "rt" )) != NULL ) {                    
+        while (fgets(psBuffer, 1024, pPipe));
+        Log( "[StartGemfireServer] ==> %s\n", psBuffer);
+        feof(pPipe);
+    }
     Log("Exiting StopGemfireServer\n");
 }
 
@@ -135,77 +145,6 @@ private:
 
 };
 
-DWORD create_process (char *cmdline, char *out, DWORD outsize){
-    PROCESS_INFORMATION pi; 
-    STARTUPINFOA si;
-    BOOL bSuccess = FALSE; 
-    SECURITY_ATTRIBUTES saAttr; 
-    HANDLE read_pipe = NULL;
-    HANDLE write_pipe = NULL;
-    DWORD size;
-    DWORD total;
-
-
-    saAttr.nLength = sizeof(SECURITY_ATTRIBUTES); 
-    saAttr.bInheritHandle = TRUE; 
-    saAttr.lpSecurityDescriptor = NULL; 
-
-    if (!CreatePipe(&read_pipe, &write_pipe, &saAttr, 0)) {
-        printf ("create_process: CreatePipe failed with error %d\n", GetLastError ());
-        return -1;
-    }
-
-    if (!SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0)) {
-        printf ("create_process: SetHandleInformation failed with error %d\n", GetLastError ());
-        CloseHandle (write_pipe);
-        CloseHandle (read_pipe);
-        return -1;
-    }
-
-    ZeroMemory(&pi, sizeof(PROCESS_INFORMATION));
-
-    ZeroMemory(&si, sizeof(STARTUPINFO));
-    si.cb = sizeof(STARTUPINFO); 
-    si.hStdError = write_pipe;
-    si.hStdOutput = write_pipe;
-    si.dwFlags |= STARTF_USESTDHANDLES;
-
-    bSuccess = CreateProcessA(NULL, 
-        cmdline,
-        NULL,
-        NULL,
-        TRUE,
-        0,
-        NULL,
-        NULL,
-        &si,
-        &pi);
-
-    if (!bSuccess) {
-        printf ("create_process: CreateProcess failed with error %d\n", GetLastError ());
-        CloseHandle (read_pipe);
-        CloseHandle (write_pipe);
-        return -1;
-    }
-    CloseHandle(pi.hProcess);
-    CloseHandle(pi.hThread);
-    CloseHandle (write_pipe);
-
-    bSuccess = TRUE;
-    total = size = 0;
-    while (bSuccess)
-    { 
-        bSuccess = ReadFile(read_pipe, out + size, outsize - size, &size, NULL);
-        if(!bSuccess || size == 0) break;
-        total += size;
-    }
-    CloseHandle (read_pipe);
-    if (total > 0)
-        out [total] = 0;
-    return total;
-}
-// for debug purpose
-
 /*
 * CNTService::Run ()
 * Worker loop for the service
@@ -220,15 +159,22 @@ void CNTService::Run() {
 
     Log ( "CNTService::Run Command = %s\n", command.c_str());
 
-    char buf [1024];
+    char psBuffer [1024];
     while (1) {
-        if (create_process (const_cast<char*>(command.c_str()), buf, 1024) > 0) {
-            if (strstr (buf, "stopped")) {
+        FILE   *pPipe;
+        if( (pPipe = _popen( command.c_str(), "rt" )) != NULL ) {                    
+            while (fgets(psBuffer, 1024, pPipe));
+            Log( "[RUN] ==> %s\n", psBuffer);
+            feof(pPipe);
+            if (strstr (psBuffer, "stopped")) {
+                Log( "[RUN] ==> Gemfire server aborted\n");
                 break;
             } else {
+                Log( "[RUN] ==> Sleeping now \n");
                 Sleep(60000);
             }
         } else {
+            Log( "[RUN] ==> _popen failed \n");
             break;
         }
     }    
@@ -298,8 +244,8 @@ BOOL CNTService::IsInstalled () {
 */
 BOOL CNTService::Install () {
     SC_HANDLE hSCM =::OpenSCManagerA (  NULL, 
-                                        NULL, 
-                                        SC_MANAGER_ALL_ACCESS); 
+        NULL, 
+        SC_MANAGER_ALL_ACCESS); 
     if (!hSCM)
         return FALSE;
     char szFilePath[FILENAME_MAX];
