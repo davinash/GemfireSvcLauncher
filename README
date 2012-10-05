@@ -17,3 +17,6 @@ Example Usage :
  Example:
 
  GemfireSvcLauncher --install --type cacheserver --name <MyGemFireService> --params -J-Xmx1024m -J-Xms128m cache-xml-file=c:\cacheserver.xml -dir=E:\gfecs  mcast-port=0  log-level=config
+
+ 
+ ![Services](https://raw.github.com/davinash/GemfireSvcLauncher/master/services.jpg)
